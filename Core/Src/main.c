@@ -74,7 +74,7 @@ PCD_HandleTypeDef hpcd_USB_OTG_FS;
 /* USER CODE BEGIN PV */
 float sample = 0.0f;
 uint32_t DACData;
-volatile struct OscData osc1 = {100.f / SR,0.f};//,osc2,osc3;
+volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f};//,osc2,osc3;
 
 /* USER CODE END PV */
 
@@ -451,9 +451,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 100 - 1;
+  htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 2160000/48000 - 1;
+  htim6.Init.Period = 216000000/48000 - 1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
