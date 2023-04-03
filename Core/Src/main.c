@@ -32,7 +32,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define DAC_RANGE 4095.0f
-#define SR 48000.f
+#define SR 96000.f
 #define WAVE_TABLE_SIZE 1024.f
 
 struct OscData {
@@ -512,7 +512,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 216000000/48000 - 1;
+  htim6.Init.Period = 216000000/96000 - 1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
