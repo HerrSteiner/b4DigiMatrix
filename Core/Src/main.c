@@ -33,7 +33,7 @@
 /* USER CODE BEGIN PD */
 #define DAC_RANGE 4095.0f
 #define SR 48000.f
-#define WAVE_TABLE_SIZE 1024
+#define WAVE_TABLE_SIZE 1024.f
 
 struct OscData {
   // everything phase related
@@ -62,6 +62,7 @@ struct OscData {
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 ADC_HandleTypeDef hadc3;
+DMA_HandleTypeDef hdma_adc1;
 
 DAC_HandleTypeDef hdac;
 
@@ -72,6 +73,9 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
+uint16_t adcBuffer[3];
+volatile uint8_t adc1Completed = 0;
+
 float sample = 0.0f;
 float sample2 = 0.0f;
 uint32_t DACData;
@@ -82,12 +86,13 @@ volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accu
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART3_UART_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_ADC3_Init(void);
 static void MX_DAC_Init(void);
+static void MX_USART3_UART_Init(void);
 static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -95,6 +100,10 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc1){
+	adc1Completed = 1;
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	// since we only use one timer, there is no need to check the timer
@@ -168,12 +177,13 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART3_UART_Init();
+  MX_DMA_Init();
   MX_USB_OTG_FS_PCD_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_ADC3_Init();
   MX_DAC_Init();
+  MX_USART3_UART_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   // start peripherals
@@ -181,26 +191,23 @@ int main(void)
   HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
   HAL_DAC_Start(&hdac, DAC_CHANNEL_2);
   HAL_TIM_Base_Start_IT(&htim6); // start the timer in interrupt mode
-
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcBuffer, 3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  float result1,result2,result3;
+
   while (1)
   {
-	  HAL_ADC_Start(&hadc1);
-	  HAL_ADC_PollForConversion(&hadc1, 100); // from 6
-	  result1 = HAL_ADC_GetValue(&hadc1);
-	  HAL_ADC_PollForConversion(&hadc1, 100); // from 7
-	  result2 = HAL_ADC_GetValue(&hadc1);
-  	  HAL_ADC_PollForConversion(&hadc1, 100); // from 9
-	  result3 = HAL_ADC_GetValue(&hadc1);
-	  HAL_ADC_Stop(&hadc1);
+	  while(!adc1Completed);
+	  HAL_ADC_Stop_DMA(&hadc1);
+	  adc1Completed = 0;
 
-	  osc1.inc = WAVE_TABLE_SIZE * (result1 + 1.0f) / SR;
-	  osc2.inc = WAVE_TABLE_SIZE * (result2 + 1.0f) / SR;
-	  osc1.crossFM = result3 / 100.0f;
+	  osc1.inc = WAVE_TABLE_SIZE * ((float)adcBuffer[0] + 1.0f) / SR;
+	  osc2.inc = WAVE_TABLE_SIZE * ((float)adcBuffer[1] + 1.0f) / SR;
+	  osc1.crossFM = (float)adcBuffer[2] / 100.0f;
+	  HAL_Delay(10);
+	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcBuffer, 3);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -294,7 +301,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 3;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -590,6 +597,22 @@ static void MX_USB_OTG_FS_PCD_Init(void)
   /* USER CODE BEGIN USB_OTG_FS_Init 2 */
 
   /* USER CODE END USB_OTG_FS_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
