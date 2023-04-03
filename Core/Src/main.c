@@ -44,11 +44,11 @@ struct OscData {
   /*
   uint32_t waveform1 = maxAnalogIn;
   uint32_t waveform2;
-
-  uint32_t crossFMint;
-  uint32_t crossFM;
-  uint32_t volume;
   */
+  uint32_t crossFMint;
+  float crossFM;
+  uint32_t volume;
+
 };
 
 /* USER CODE END PD */
@@ -73,9 +73,10 @@ PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
 float sample = 0.0f;
+float sample2 = 0.0f;
 uint32_t DACData;
-volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f};//,osc2,osc3;
-
+volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f};
+volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accumulator = 0.f};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -98,21 +99,41 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	// since we only use one timer, there is no need to check the timer
 	float accumulator;
+
 	// calculate oscillator 1
 	accumulator = osc1.phase_accumulator;
 	accumulator += osc1.inc;
 	if (accumulator >= WAVE_TABLE_SIZE) {
 	    accumulator -= WAVE_TABLE_SIZE;
 	}
+	// apply FM
+	accumulator += osc1.crossFM * sample2;
+	if (accumulator >= WAVE_TABLE_SIZE) {
+		    accumulator -= WAVE_TABLE_SIZE;
+	}
+	else if (accumulator < 0) {
+	    accumulator += WAVE_TABLE_SIZE;
+	}
+	// store accumulator
 	osc1.phase_accumulator = accumulator;
 
 	// interpolated table value
 	uint16_t index = (uint16_t)accumulator;
-
 	sample = (accumulator-index)*sintable[index+1] + (index+1 - accumulator)*sintable[index];
 
+	// calculate oscillator 2
+	accumulator = osc2.phase_accumulator;
+	accumulator += osc2.inc;
+	if (accumulator >= WAVE_TABLE_SIZE) {
+		accumulator -= WAVE_TABLE_SIZE;
+	}
+	osc2.phase_accumulator = accumulator;
 
-	DACData = ((uint32_t) ((sample * 0.7f + 1.0f) * DAC_RANGE / 2.0f));
+	// interpolated table value
+	index = (uint16_t)accumulator;
+	sample2 = (accumulator-index)*sintable[index+1] + (index+1 - accumulator)*sintable[index];
+
+	DACData = ((uint32_t) (((sample + 1.0f) * DAC_RANGE) / 4.0f));
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, DACData);
 
@@ -165,8 +186,21 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  float result1,result2,result3;
   while (1)
   {
+	  HAL_ADC_Start(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, 100); // from 6
+	  result1 = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, 100); // from 7
+	  result2 = HAL_ADC_GetValue(&hadc1);
+  	  HAL_ADC_PollForConversion(&hadc1, 100); // from 9
+	  result3 = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_Stop(&hadc1);
+
+	  osc1.inc = WAVE_TABLE_SIZE * (result1 + 1.0f) / SR;
+	  osc2.inc = WAVE_TABLE_SIZE * (result2 + 1.0f) / SR;
+	  osc1.crossFM = result3 / 100.0f;
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -253,13 +287,13 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.NbrOfConversion = 3;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -269,9 +303,27 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Channel = ADC_CHANNEL_6;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_9;
+  sConfig.Rank = ADC_REGULAR_RANK_3;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
