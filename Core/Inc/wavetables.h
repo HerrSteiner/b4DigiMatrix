@@ -3,6 +3,6 @@
 
 #include <stdint.h>
 
-extern const float sintable[1025];
+extern const float sintable[4097];
 
 #endif

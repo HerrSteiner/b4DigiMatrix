@@ -33,7 +33,7 @@
 /* USER CODE BEGIN PD */
 #define DAC_RANGE 4095.0f
 #define SR 96000.f
-#define WAVE_TABLE_SIZE 1024.f
+#define WAVE_TABLE_SIZE 4096.f
 
 struct OscData {
   // everything phase related
@@ -128,7 +128,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	// interpolated table value
 	uint16_t index = (uint16_t)accumulator;
-	sample = (accumulator-index)*sintable[index+1] + (index+1 - accumulator)*sintable[index];
+	uint16_t indexPlus = index + 1;
+	sample = (indexPlus - accumulator)*sintable[index] + (accumulator-index)*sintable[indexPlus];
 
 	// calculate oscillator 2
 	accumulator = osc2.phase_accumulator;
@@ -140,7 +141,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	// interpolated table value
 	index = (uint16_t)accumulator;
-	sample2 = (accumulator-index)*sintable[index+1] + (index+1 - accumulator)*sintable[index];
+	indexPlus = index + 1;
+	sample2 = (indexPlus - accumulator)*sintable[index] + (accumulator-index)*sintable[indexPlus];
 
 	DACData = ((uint32_t) (((sample + 1.0f) * DAC_RANGE) / 4.0f));
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
@@ -196,16 +198,19 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
+  float freqFactor = WAVE_TABLE_SIZE / SR;
   while (1)
   {
 	  while(!adc1Completed);
 	  HAL_ADC_Stop_DMA(&hadc1);
 	  adc1Completed = 0;
 
-	  osc1.inc = WAVE_TABLE_SIZE * ((float)adcBuffer[0] + 1.0f) / SR;
-	  osc2.inc = WAVE_TABLE_SIZE * ((float)adcBuffer[1] + 1.0f) / SR;
-	  osc1.crossFM = (float)adcBuffer[2] / 100.0f;
+	  osc1.inc = freqFactor * (adcBuffer[0] + 1.0f);
+	  // WAVE_TABLE_SIZE * ((float)adcBuffer[0] + 1.0f) / SR;
+	  //osc2.inc = WAVE_TABLE_SIZE * ((float)adcBuffer[1] + 1.0f) / SR;
+	  osc2.inc = freqFactor * (adcBuffer[1] + 1.0f);
+	  osc1.crossFM = (float)adcBuffer[2] / 50.0f;
+
 	  HAL_Delay(10);
 	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcBuffer, 3);
     /* USER CODE END WHILE */
