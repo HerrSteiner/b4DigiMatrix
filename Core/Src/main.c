@@ -48,7 +48,7 @@ struct OscData {
   uint32_t crossFMint;
   float crossFM;
   uint32_t volume;
-
+  float tableIndex;
 };
 
 /* USER CODE END PD */
@@ -90,9 +90,13 @@ float low=0.f;
 float high=0.f;
 float band=0.f;
 float notch = 0.f;
+float filterIndex = 0.f;
+float *filterStates[5]={&low,&high,&band,&notch,&low};
+
 uint32_t DACData;
-volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f};
-volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accumulator = 0.f};
+volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
+volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
+const float *waveset[6]={sintable,tritable,sawtable,squaretable,randomtable,sintable};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -149,10 +153,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	// store accumulator
 	osc1.phase_accumulator = accumulator;
 
+	// get wavetable
+	float tableIndex = osc1.tableIndex;
+	uint16_t tindex = (uint16_t)tableIndex;
+	uint16_t tindexPlus = tindex + 1;
+
+
 	// interpolated table value
 	uint16_t index = (uint16_t)accumulator;
 	uint16_t indexPlus = index + 1;
-	sample = (indexPlus - accumulator)*sintable[index] + (accumulator-index)*sintable[indexPlus];
+	float sampleA,sampleB;
+
+	sampleA = (indexPlus - accumulator) * *(waveset[tindex]+index) + (accumulator-index) * *(waveset[tindex]+indexPlus);
+	sampleB = (indexPlus - accumulator) * *(waveset[tindexPlus]+index) + (accumulator-index) * *(waveset[tindexPlus]+indexPlus);
+
+	sample = (tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB;
 
 	// calculate oscillator 2
 	accumulator = osc2.phase_accumulator;
@@ -173,16 +188,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//f = 2 sin (pi * cutoff / fs) //[approximately]
 	//q = resonance/bandwidth [0 < q <= 1]  most res: q=1, less: q=0
 
-
-
-	//--beginloop
 	low = low + cutoff * band;
-	high = reso * sample*0.5 - low - reso*band;
+	high = reso * sample*0.5f - low - reso*band;
 	band = cutoff * high + band;
 	notch = high + low;
-	//--endloop
 
-	DACData = ((uint32_t) (((low + 1.0f)*0.5 * DAC_RANGE) / 4.0f));
+	// filter blend
+	index = (uint16_t)filterIndex;
+	indexPlus = index + 1;
+	sample = (indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus];
+
+	DACData = ((uint32_t) (((sample + 1.0f)*0.5 * DAC_RANGE) / 4.0f));
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, DACData);
 
@@ -258,7 +274,7 @@ int main(void)
 		  HAL_ADC_Stop_DMA(&hadc2);
 		  adc2Completed = 0;
 		 //10 13
-		  cutoff = 2.f * sinf (3.14159265359f *  (adc2Buffer[1]*1.5f + 30.f) / SR); //[approximately] ;
+		  cutoff = 2.f * sinf (3.14159265359f *  (adc2Buffer[1]*3.f + 30.f) / SR);
 		  reso =  adc2Buffer[4] / DAC_RANGE;
 		  HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2Buffer, 5);
 	  }
@@ -266,6 +282,10 @@ int main(void)
 	  if (adc3Completed){
 		  HAL_ADC_Stop_DMA(&hadc3);
 		  adc3Completed = 0;
+		  osc1.tableIndex = adc3Buffer[5] / DAC_RANGE * 4.f;
+		  filterIndex = adc3Buffer[7] / DAC_RANGE * 3.f;
+
+		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
 	  }
 
 
