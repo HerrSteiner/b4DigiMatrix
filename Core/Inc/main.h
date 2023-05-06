@@ -61,6 +61,10 @@ void Error_Handler(void);
 #define USER_Btn_GPIO_Port GPIOC
 #define MCO_Pin GPIO_PIN_0
 #define MCO_GPIO_Port GPIOH
+#define Osc2TablePB2_Pin GPIO_PIN_2
+#define Osc2TablePB2_GPIO_Port GPIOB
+#define EG2TriggerPB10_Pin GPIO_PIN_10
+#define EG2TriggerPB10_GPIO_Port GPIOB
 #define LD3_Pin GPIO_PIN_14
 #define LD3_GPIO_Port GPIOB
 #define STLK_RX_Pin GPIO_PIN_8
@@ -85,10 +89,22 @@ void Error_Handler(void);
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define Osc1TablePA15_Pin GPIO_PIN_15
+#define Osc1TablePA15_GPIO_Port GPIOA
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
+#define Osc3TablePB4_Pin GPIO_PIN_4
+#define Osc3TablePB4_GPIO_Port GPIOB
+#define FilterModePB5_Pin GPIO_PIN_5
+#define FilterModePB5_GPIO_Port GPIOB
+#define EG1LoopPB6_Pin GPIO_PIN_6
+#define EG1LoopPB6_GPIO_Port GPIOB
 #define LD2_Pin GPIO_PIN_7
 #define LD2_GPIO_Port GPIOB
+#define EG1TriggerPB8_Pin GPIO_PIN_8
+#define EG1TriggerPB8_GPIO_Port GPIOB
+#define EG2LoopPB9_Pin GPIO_PIN_9
+#define EG2LoopPB9_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

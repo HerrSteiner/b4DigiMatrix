@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "wavetables.h"
@@ -45,10 +46,12 @@ struct OscData {
   uint32_t waveform1 = maxAnalogIn;
   uint32_t waveform2;
   */
-  uint32_t crossFMint;
+  float crossFMint;
   float crossFM;
-  uint32_t volume;
+  float volume;
   float tableIndex;
+
+  GPIO_PinState waveChange; // chooses alternative wavetable
 };
 
 /* USER CODE END PD */
@@ -84,6 +87,8 @@ volatile uint8_t adc3Completed = 0;
 
 float sample = 0.0f;
 float sample2 = 0.0f;
+float sample3 = 0.0f;
+
 float cutoff = 0.f;
 float reso = 0.1f;
 float low=0.f;
@@ -91,12 +96,17 @@ float high=0.f;
 float band=0.f;
 float notch = 0.f;
 float filterIndex = 0.f;
+float filterVolume = 0.f;
 float *filterStates[5]={&low,&high,&band,&notch,&low};
 
 uint32_t DACData;
 volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
 volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
-const float *waveset[6]={sintable,tritable,sawtable,squaretable,randomtable,sintable};
+volatile struct OscData osc3 = {.inc = WAVE_TABLE_SIZE * 99.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
+
+// wavetableset definitions, each one is made of several individual single cycle wave tables
+const float *waveset1[6]={sintable,tritable,sawtable,squaretable,randomtable,sintable};
+const float *waveset2[6]={sintable,sinsawtable,sawtable,squaretable,sinsquaretable,sintable};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -143,7 +153,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	    accumulator -= WAVE_TABLE_SIZE;
 	}
 	// apply FM
+
 	accumulator += osc1.crossFM * sample2;
+
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		    accumulator -= WAVE_TABLE_SIZE;
 	}
@@ -164,12 +176,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	uint16_t indexPlus = index + 1;
 	float sampleA,sampleB;
 
-	sampleA = (indexPlus - accumulator) * *(waveset[tindex]+index) + (accumulator-index) * *(waveset[tindex]+indexPlus);
-	sampleB = (indexPlus - accumulator) * *(waveset[tindexPlus]+index) + (accumulator-index) * *(waveset[tindexPlus]+indexPlus);
-
-	sample = (tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB;
+	if (osc1.waveChange == GPIO_PIN_RESET){
+	sampleA = (indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus);
+	sampleB = (indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus);
+	}
+	else {
+		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
+		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
+	}
+	sample = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc1.volume;
 
 	// calculate oscillator 2
+
 	accumulator = osc2.phase_accumulator;
 	accumulator += osc2.inc;
 	if (accumulator >= WAVE_TABLE_SIZE) {
@@ -177,16 +195,64 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	}
 	osc2.phase_accumulator = accumulator;
 
+	// get wavetable
+	tableIndex = osc2.tableIndex;
+	tindex = (uint16_t)tableIndex;
+	tindexPlus = tindex + 1;
+
+
 	// interpolated table value
 	index = (uint16_t)accumulator;
 	indexPlus = index + 1;
-	sample2 = (indexPlus - accumulator)*sintable[index] + (accumulator-index)*sintable[indexPlus];
+
+
+	if (osc2.waveChange == GPIO_PIN_RESET){
+		sampleA = (indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus);
+		sampleB = (indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus);
+	}
+	else {
+		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
+		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
+	}
+	sample2 = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc2.volume;
+
+	// calculate oscillator 3
+	accumulator = osc3.phase_accumulator;
+	accumulator += osc3.inc;
+	if (accumulator >= WAVE_TABLE_SIZE) {
+		accumulator -= WAVE_TABLE_SIZE;
+	}
+	osc3.phase_accumulator = accumulator;
+
+	// get wavetable
+	tableIndex = osc3.tableIndex;
+	tindex = (uint16_t)tableIndex;
+	tindexPlus = tindex + 1;
+
+
+	// interpolated table value
+	index = (uint16_t)accumulator;
+	indexPlus = index + 1;
+
+
+	if (osc3.waveChange == GPIO_PIN_RESET){
+		sampleA = (indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus);
+		sampleB = (indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus);
+	}
+	else {
+		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
+		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
+	}
+	sample3 = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc3.volume;
 
 	// filter
 	//cutoff = cutoff freq in Hz
 	//fs = sampling frequency //(e.g. 44100Hz)
 	//f = 2 sin (pi * cutoff / fs) //[approximately]
 	//q = resonance/bandwidth [0 < q <= 1]  most res: q=1, less: q=0
+
+	// adding the oscillators
+	sample = (sample + sample2 + sample3) / 4.0f;
 
 	low = low + cutoff * band;
 	high = reso * sample*0.5f - low - reso*band;
@@ -196,9 +262,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	// filter blend
 	index = (uint16_t)filterIndex;
 	indexPlus = index + 1;
-	sample = (indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus];
+	sample = ((indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus])*filterVolume;
 
-	DACData = ((uint32_t) (((sample + 1.0f)*0.5 * DAC_RANGE) / 4.0f));
+	DACData = ((uint32_t) (((sample + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, DACData);
 
@@ -262,10 +328,17 @@ int main(void)
 		  HAL_ADC_Stop_DMA(&hadc1);
 		  adc1Completed = 0;
 
-		  osc1.inc = freqFactor * (adc1Buffer[4] + 1.0f);
-		  osc2.inc = freqFactor * (adc1Buffer[5] + 1.0f);
-		  osc1.crossFM = (float)adc1Buffer[6] / 50.0f;
+		  osc1.inc = freqFactor * ((float)adc1Buffer[0] + 1.0f);
+		  osc1.tableIndex = (float)adc1Buffer[1] / DAC_RANGE * 4.f;
+		  osc1.volume = (float)adc1Buffer[2] / DAC_RANGE;
+		  osc1.crossFM = (float)adc1Buffer[3] / 50.0f;
 
+		  osc2.inc = freqFactor * ((float)adc1Buffer[4] + 1.0f);
+		  osc2.tableIndex = (float)adc1Buffer[5] / DAC_RANGE * 4.f;
+		  osc2.volume = (float)adc1Buffer[6] / DAC_RANGE;
+
+		  osc3.inc = freqFactor * ((float)adc1Buffer[7] + 1.0f);
+		  osc3.tableIndex = (float)adc1Buffer[8] / DAC_RANGE * 4.f;
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buffer, 9);
 	  }
@@ -273,24 +346,31 @@ int main(void)
 	  if (adc2Completed){
 		  HAL_ADC_Stop_DMA(&hadc2);
 		  adc2Completed = 0;
+		  osc3.volume = adc2Buffer[0] / DAC_RANGE;
 		 //10 13
-		  cutoff = 2.f * sinf (3.14159265359f *  (adc2Buffer[1]*3.f + 30.f) / SR);
-		  reso =  adc2Buffer[4] / DAC_RANGE;
+		  cutoff = 2.f * sinf (3.14159265359f *  ((float)adc2Buffer[1]*3.f + 30.f) / SR);
+		  reso =  (float)adc2Buffer[2] / DAC_RANGE + 0.01;
+		  filterIndex = (float)adc2Buffer[3] / DAC_RANGE * 3.f;
+		  filterVolume = (float)adc2Buffer[4] / DAC_RANGE;
+
 		  HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2Buffer, 5);
 	  }
 
 	  if (adc3Completed){
 		  HAL_ADC_Stop_DMA(&hadc3);
 		  adc3Completed = 0;
-		  osc1.tableIndex = adc3Buffer[5] / DAC_RANGE * 4.f;
-		  filterIndex = adc3Buffer[7] / DAC_RANGE * 3.f;
+
+
 
 		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
 	  }
 
+	  // read GPIO
+	  osc1.waveChange = HAL_GPIO_ReadPin(GPIOE, Osc1TablePA15_Pin);
+	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOE, Osc2TablePB2_Pin);
+	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOE, Osc3TablePB4_Pin);
 
-
-	  HAL_Delay(10);
+	  //HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -911,14 +991,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB2 PB10 PB11 PB12
-                           PB4 PB5 PB6 PB8
-                           PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_8
-                          |GPIO_PIN_9;
+  /*Configure GPIO pins : Osc2TablePB2_Pin EG2TriggerPB10_Pin Osc3TablePB4_Pin FilterModePB5_Pin
+                           EG1LoopPB6_Pin EG1TriggerPB8_Pin EG2LoopPB9_Pin */
+  GPIO_InitStruct.Pin = Osc2TablePB2_Pin|EG2TriggerPB10_Pin|Osc3TablePB4_Pin|FilterModePB5_Pin
+                          |EG1LoopPB6_Pin|EG1TriggerPB8_Pin|EG2LoopPB9_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PG0 PG1 PG2 PG3
@@ -932,6 +1010,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB11 PB12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD3_Pin LD2_Pin */
   GPIO_InitStruct.Pin = LD3_Pin|LD2_Pin;
@@ -965,11 +1049,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_15;
+  /*Configure GPIO pin : Osc1TablePA15_Pin */
+  GPIO_InitStruct.Pin = Osc1TablePA15_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(Osc1TablePA15_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
