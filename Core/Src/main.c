@@ -98,6 +98,7 @@ float notch = 0.f;
 float filterIndex = 0.f;
 float filterVolume = 0.f;
 float *filterStates[5]={&low,&high,&band,&notch,&low};
+float dacLUT[4096];
 
 uint32_t DACData;
 volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
@@ -258,11 +259,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	high = reso * sample*0.5f - low - reso*band;
 	band = cutoff * high + band;
 	notch = high + low;
-
+	float compensation = 1.f;
+	float antiReso = 1.f - reso;
+	//if (reso < 0.4f)
+	compensation = 4.f*antiReso*antiReso*antiReso*antiReso*antiReso*antiReso*antiReso * antiReso * antiReso * antiReso * antiReso + 1.f;
 	// filter blend
 	index = (uint16_t)filterIndex;
 	indexPlus = index + 1;
-	sample = ((indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus])*filterVolume;
+	sample = ((indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus])*filterVolume * compensation;
 
 	DACData = ((uint32_t) (((sample + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
@@ -287,6 +291,10 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+
+  for (int i=0;i<4096;i++){
+	  dacLUT[i] = ((float)i) / 4095.0f;
+  }
 
   /* USER CODE END Init */
 
@@ -323,22 +331,26 @@ int main(void)
   float freqFactor = WAVE_TABLE_SIZE / SR;
   while (1)
   {
+	  // read GPIO
+	  		  	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
+	  		  	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
+	  		  	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
 	  while(!adc1Completed && !adc2Completed && !adc3Completed);
 	  if (adc1Completed){
 		  HAL_ADC_Stop_DMA(&hadc1);
 		  adc1Completed = 0;
 
-		  osc1.inc = freqFactor * ((float)adc1Buffer[0] + 1.0f);
-		  osc1.tableIndex = (float)adc1Buffer[1] / DAC_RANGE * 4.f;
-		  osc1.volume = (float)adc1Buffer[2] / DAC_RANGE;
-		  osc1.crossFM = (float)adc1Buffer[3] / 50.0f;
+		  osc1.inc = freqFactor * (dacLUT[adc1Buffer[0]]*2095.f + 0.01f);
+		  osc1.tableIndex = dacLUT[adc1Buffer[1]] * 4.f;
+		  osc1.volume = dacLUT[adc1Buffer[2]];
+		  osc1.crossFM = dacLUT[adc1Buffer[3]]*1000.f;
 
-		  osc2.inc = freqFactor * ((float)adc1Buffer[4] + 1.0f);
-		  osc2.tableIndex = (float)adc1Buffer[5] / DAC_RANGE * 4.f;
-		  osc2.volume = (float)adc1Buffer[6] / DAC_RANGE;
+		  osc2.inc = freqFactor * (dacLUT[adc1Buffer[4]]*2095.f + 0.01f);
+		  osc2.tableIndex = dacLUT[adc1Buffer[5]]* 4.f;
+		  osc2.volume = dacLUT[adc1Buffer[6]];
 
-		  osc3.inc = freqFactor * ((float)adc1Buffer[7] + 1.0f);
-		  osc3.tableIndex = (float)adc1Buffer[8] / DAC_RANGE * 4.f;
+		  osc3.inc = freqFactor * (dacLUT[adc1Buffer[7]]*2095.f + 0.01f);
+		  osc3.tableIndex = dacLUT[adc1Buffer[8]]* 4.f;
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buffer, 9);
 	  }
@@ -346,12 +358,12 @@ int main(void)
 	  if (adc2Completed){
 		  HAL_ADC_Stop_DMA(&hadc2);
 		  adc2Completed = 0;
-		  osc3.volume = adc2Buffer[0] / DAC_RANGE;
+		  osc3.volume = dacLUT[adc2Buffer[0]];
 		 //10 13
-		  cutoff = 2.f * sinf (3.14159265359f *  ((float)adc2Buffer[1]*3.f + 30.f) / SR);
-		  reso =  (float)adc2Buffer[2] / DAC_RANGE + 0.01;
-		  filterIndex = (float)adc2Buffer[3] / DAC_RANGE * 3.f;
-		  filterVolume = (float)adc2Buffer[4] / DAC_RANGE;
+		  cutoff = 2.f * sinf (3.14159265359f *  (dacLUT[adc2Buffer[1]]*11000.f + 50.f) / SR);
+		  reso =  dacLUT[adc2Buffer[2]] + 0.01;
+		  filterIndex = dacLUT[adc2Buffer[3]] * 3.f;
+		  filterVolume = dacLUT[adc2Buffer[4]];
 
 		  HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2Buffer, 5);
 	  }
@@ -365,10 +377,7 @@ int main(void)
 		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
 	  }
 
-	  // read GPIO
-	  osc1.waveChange = HAL_GPIO_ReadPin(GPIOE, Osc1TablePA15_Pin);
-	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOE, Osc2TablePB2_Pin);
-	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOE, Osc3TablePB4_Pin);
+
 
 	  //HAL_Delay(10);
     /* USER CODE END WHILE */
@@ -965,14 +974,20 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USB_PowerSwitchOn_GPIO_Port, USB_PowerSwitchOn_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PE2 PE3 PE4 PE5
-                           PE6 PE7 PE8 PE9
-                           PE10 PE11 PE12 PE13
-                           PE14 PE15 PE0 PE1 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5
-                          |GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_9
-                          |GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_13
-                          |GPIO_PIN_14|GPIO_PIN_15|GPIO_PIN_0|GPIO_PIN_1;
+  /*Configure GPIO pins : Osc3TablePE2_Pin Osc1TablePE0_Pin Osc2TablePE1_Pin */
+  GPIO_InitStruct.Pin = Osc3TablePE2_Pin|Osc1TablePE0_Pin|Osc2TablePE1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PE3 PE4 PE5 PE6
+                           PE7 PE8 PE9 PE10
+                           PE11 PE12 PE13 PE14
+                           PE15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6
+                          |GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10
+                          |GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14
+                          |GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);

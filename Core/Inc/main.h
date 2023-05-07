@@ -57,6 +57,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define Osc3TablePE2_Pin GPIO_PIN_2
+#define Osc3TablePE2_GPIO_Port GPIOE
 #define USER_Btn_Pin GPIO_PIN_13
 #define USER_Btn_GPIO_Port GPIOC
 #define MCO_Pin GPIO_PIN_0
@@ -105,6 +107,10 @@ void Error_Handler(void);
 #define EG1TriggerPB8_GPIO_Port GPIOB
 #define EG2LoopPB9_Pin GPIO_PIN_9
 #define EG2LoopPB9_GPIO_Port GPIOB
+#define Osc1TablePE0_Pin GPIO_PIN_0
+#define Osc1TablePE0_GPIO_Port GPIOE
+#define Osc2TablePE1_Pin GPIO_PIN_1
+#define Osc2TablePE1_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
 
