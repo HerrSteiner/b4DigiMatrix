@@ -361,7 +361,7 @@ int main(void)
 		  osc3.volume = dacLUT[adc2Buffer[0]];
 		 //10 13
 		  cutoff = 2.f * sinf (3.14159265359f *  (dacLUT[adc2Buffer[1]]*11000.f + 50.f) / SR);
-		  reso =  dacLUT[adc2Buffer[2]] + 0.01;
+		  reso =  dacLUT[adc2Buffer[2]] + 0.01f;
 		  filterIndex = dacLUT[adc2Buffer[3]] * 3.f;
 		  filterVolume = dacLUT[adc2Buffer[4]];
 
@@ -974,22 +974,16 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USB_PowerSwitchOn_GPIO_Port, USB_PowerSwitchOn_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : Osc3TablePE2_Pin Osc1TablePE0_Pin Osc2TablePE1_Pin */
-  GPIO_InitStruct.Pin = Osc3TablePE2_Pin|Osc1TablePE0_Pin|Osc2TablePE1_Pin;
+  /*Configure GPIO pins : Eg1FilterVolPE2_Pin Eg1ProcPE3_Pin Eg2Osc1FMPE4_Pin Eg2Osc1WavPE5_Pin
+                           Eg2Osc1VolPE6_Pin Eg2Osc2FMPE7_Pin Eg2Osc2WavPE8_Pin Eg2Osc2VolPE9_Pin
+                           Eg2Osc3FMPE10_Pin Eg2Osc3WavPE11_Pin Eg2Osc3VolPE12_Pin Eg2CutPE13_Pin
+                           Eg2MorphPE14_Pin Eg2FilterVolPE15_Pin Eg1CutPE0_Pin Eg1MorphPE1_Pin */
+  GPIO_InitStruct.Pin = Eg1FilterVolPE2_Pin|Eg1ProcPE3_Pin|Eg2Osc1FMPE4_Pin|Eg2Osc1WavPE5_Pin
+                          |Eg2Osc1VolPE6_Pin|Eg2Osc2FMPE7_Pin|Eg2Osc2WavPE8_Pin|Eg2Osc2VolPE9_Pin
+                          |Eg2Osc3FMPE10_Pin|Eg2Osc3WavPE11_Pin|Eg2Osc3VolPE12_Pin|Eg2CutPE13_Pin
+                          |Eg2MorphPE14_Pin|Eg2FilterVolPE15_Pin|Eg1CutPE0_Pin|Eg1MorphPE1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PE3 PE4 PE5 PE6
-                           PE7 PE8 PE9 PE10
-                           PE11 PE12 PE13 PE14
-                           PE15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6
-                          |GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10
-                          |GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14
-                          |GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : USER_Btn_Pin */
@@ -998,39 +992,35 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_Btn_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PF0 PF1 PF2 PF11
-                           PF12 PF13 PF14 PF15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_11
-                          |GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
+  /*Configure GPIO pins : Eg2ProcPF0_Pin AnalogInOsc1FMPF1_Pin AnalogInOsc2FMPF2_Pin AnalogInOsc3FMPF11_Pin
+                           AnalogInCutPF12_Pin Osc1FMOsc1VolPF13_Pin Osc1FMOsc2FMPF14_Pin Osc1FMOsc2WavPF15_Pin */
+  GPIO_InitStruct.Pin = Eg2ProcPF0_Pin|AnalogInOsc1FMPF1_Pin|AnalogInOsc2FMPF2_Pin|AnalogInOsc3FMPF11_Pin
+                          |AnalogInCutPF12_Pin|Osc1FMOsc1VolPF13_Pin|Osc1FMOsc2FMPF14_Pin|Osc1FMOsc2WavPF15_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Osc2TablePB2_Pin EG2TriggerPB10_Pin Osc3TablePB4_Pin FilterModePB5_Pin
+  /*Configure GPIO pins : Osc2TablePB2_Pin EG2TriggerPB10_Pin Osc1VolOut1PB11_Pin Osc1VolOut2PB12_Pin
+                           Osc1FMOsc1FMPB13_Pin Osc1FMOsc1WavPB15_Pin Osc3TablePB4_Pin FilterModePB5_Pin
                            EG1LoopPB6_Pin EG1TriggerPB8_Pin EG2LoopPB9_Pin */
-  GPIO_InitStruct.Pin = Osc2TablePB2_Pin|EG2TriggerPB10_Pin|Osc3TablePB4_Pin|FilterModePB5_Pin
+  GPIO_InitStruct.Pin = Osc2TablePB2_Pin|EG2TriggerPB10_Pin|Osc1VolOut1PB11_Pin|Osc1VolOut2PB12_Pin
+                          |Osc1FMOsc1FMPB13_Pin|Osc1FMOsc1WavPB15_Pin|Osc3TablePB4_Pin|FilterModePB5_Pin
                           |EG1LoopPB6_Pin|EG1TriggerPB8_Pin|EG2LoopPB9_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PG0 PG1 PG2 PG3
-                           PG4 PG5 USB_OverCurrent_Pin PG8
-                           PG9 PG10 PG11 PG12
-                           PG13 PG14 PG15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_4|GPIO_PIN_5|USB_OverCurrent_Pin|GPIO_PIN_8
-                          |GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12
-                          |GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
+  /*Configure GPIO pins : Osc1FMOsc2VolPG0_Pin Osc1FMOsc3FMPG1_Pin Osc1FMOsc3WavPG2_Pin Osc1FMOsc3VolPG3_Pin
+                           Osc1FMCutPG4_Pin Osc1FMMorphPG5_Pin Osc1FMProcPG8_Pin Osc2VolOsc1FMPG9_Pin
+                           Osc2VolOsc2FMPG10_Pin Osc2VolOsc3FMPG11_Pin Osc2VolCutPG12_Pin Osc3VolOsc1FMPG13_Pin
+                           Osc3VolOsc2FMPG14_Pin */
+  GPIO_InitStruct.Pin = Osc1FMOsc2VolPG0_Pin|Osc1FMOsc3FMPG1_Pin|Osc1FMOsc3WavPG2_Pin|Osc1FMOsc3VolPG3_Pin
+                          |Osc1FMCutPG4_Pin|Osc1FMMorphPG5_Pin|Osc1FMProcPG8_Pin|Osc2VolOsc1FMPG9_Pin
+                          |Osc2VolOsc2FMPG10_Pin|Osc2VolOsc3FMPG11_Pin|Osc2VolCutPG12_Pin|Osc3VolOsc1FMPG13_Pin
+                          |Osc3VolOsc2FMPG14_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB11 PB12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD3_Pin LD2_Pin */
   GPIO_InitStruct.Pin = LD3_Pin|LD2_Pin;
@@ -1039,14 +1029,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PD14 PD15 PD0 PD1
-                           PD2 PD3 PD4 PD5
-                           PD6 PD7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_14|GPIO_PIN_15|GPIO_PIN_0|GPIO_PIN_1
-                          |GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5
-                          |GPIO_PIN_6|GPIO_PIN_7;
+  /*Configure GPIO pins : Eg1Osc2FMPD10_Pin Eg1Osc2WavPD11_Pin Eg1Osc2VolPD12_Pin Eg1Osc3FMPD13_Pin
+                           Eg1Osc3WavPD14_Pin Eg1Osc3VolPD15_Pin FilterOut1PD0_Pin FilterOut2PD1_Pin
+                           ProcOut1PD2_Pin ProcOut2PD3_Pin ProcFilterPD4_Pin Eg1Osc1FMPD5_Pin
+                           Eg1Osc1WavPD6_Pin Eg1Osc1VolPD7_Pin */
+  GPIO_InitStruct.Pin = Eg1Osc2FMPD10_Pin|Eg1Osc2WavPD11_Pin|Eg1Osc2VolPD12_Pin|Eg1Osc3FMPD13_Pin
+                          |Eg1Osc3WavPD14_Pin|Eg1Osc3VolPD15_Pin|FilterOut1PD0_Pin|FilterOut2PD1_Pin
+                          |ProcOut1PD2_Pin|ProcOut2PD3_Pin|ProcFilterPD4_Pin|Eg1Osc1FMPD5_Pin
+                          |Eg1Osc1WavPD6_Pin|Eg1Osc1VolPD7_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
   /*Configure GPIO pin : USB_PowerSwitchOn_Pin */
@@ -1056,12 +1048,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(USB_PowerSwitchOn_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PC6 PC7 PC8 PC9
-                           PC10 PC11 PC12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_9
-                          |GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12;
+  /*Configure GPIO pins : USB_OverCurrent_Pin Osc3VolProcPG15_Pin */
+  GPIO_InitStruct.Pin = USB_OverCurrent_Pin|Osc3VolProcPG15_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : Osc1VolFilterPC6_Pin Osc2VolOut1PC7_Pin Osc2VolOut2PC8_Pin Osc2VolFilterPC9_Pin
+                           Osc3VolOut1PC10_Pin Osc3VolOut2PC11_Pin Osc3VolFilterPC12_Pin */
+  GPIO_InitStruct.Pin = Osc1VolFilterPC6_Pin|Osc2VolOut1PC7_Pin|Osc2VolOut2PC8_Pin|Osc2VolFilterPC9_Pin
+                          |Osc3VolOut1PC10_Pin|Osc3VolOut2PC11_Pin|Osc3VolFilterPC12_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : Osc1TablePA15_Pin */
