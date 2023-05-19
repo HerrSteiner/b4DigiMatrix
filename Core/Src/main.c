@@ -52,6 +52,9 @@ struct OscData {
   float tableIndex;
 
   GPIO_PinState waveChange; // chooses alternative wavetable
+  float output1;
+  float output2;
+  float outputFilter;
 };
 
 /* USER CODE END PD */
@@ -88,7 +91,8 @@ volatile uint8_t adc3Completed = 0;
 float sample = 0.0f;
 float sample2 = 0.0f;
 float sample3 = 0.0f;
-
+float analogIn = 0.0f;
+float aInOsc1, aInOsc2, aInOsc3, aInFilter;
 float cutoff = 0.f;
 float reso = 0.1f;
 float low=0.f;
@@ -98,7 +102,27 @@ float notch = 0.f;
 float filterIndex = 0.f;
 float filterVolume = 0.f;
 float *filterStates[5]={&low,&high,&band,&notch,&low};
+float filterOutput1,filterOutput2;
 float dacLUT[4096];
+float cutLUT[4096];
+
+float eg1Attack;
+float eg1Decay;
+GPIO_PinState eg1Loop;
+GPIO_PinState eg1Trigger;
+float eg1Value = 0.f;
+float eg1Inc = 0.f;
+float eg1Dec = 0.f;
+float eg1Amount;
+typedef enum {
+	stop,
+	attack,
+	sustain,
+	decay
+} egStates;
+
+egStates eg1State = stop;
+egStates eg2State = stop;
 
 uint32_t DACData;
 volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
@@ -145,6 +169,42 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	// since we only use one timer, there is no need to check the timer
+
+	// calculate envelope generator 1
+	/*
+	if (eg1State == attack) {
+		eg1Value += eg1Inc;
+		if (eg1Value >= 1.f) {
+			eg1Value = 1.f;
+			eg1State=sustain;
+			HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_RESET);
+		}
+	}
+	else if (eg1State == sustain){
+		if (eg1Loop == GPIO_PIN_SET || eg1Trigger == GPIO_PIN_SET){
+			eg1State = decay;
+		}
+	}
+	else if (eg1State == decay){
+		eg1Value -= eg1Dec;
+		if (eg1Value <= 0.f){
+			eg1Value = 0.f;
+			eg1State=stop;
+		}
+	}
+
+	if (eg1Trigger == GPIO_PIN_RESET){
+		eg1State = attack;
+		HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
+	}
+	else if (eg1Loop == GPIO_PIN_SET && eg1State == stop){
+		eg1State = attack;
+		HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
+	}
+	float env1Value = eg1Value * eg1Value; // making the envelope snappy
+	env1Value *= eg1Amount;
+*/
+	float env1Value = 0.f;
 	float accumulator;
 
 	// calculate oscillator 1
@@ -155,7 +215,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	}
 	// apply FM
 
-	accumulator += osc1.crossFM * sample2;
+	accumulator += analogIn * aInOsc1;//osc1.crossFM * sample2;
 
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		    accumulator -= WAVE_TABLE_SIZE;
@@ -185,14 +245,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
 		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
 	}
-	sample = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc1.volume;
+	sample = (((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc1.volume) * env1Value;
 
 	// calculate oscillator 2
-
 	accumulator = osc2.phase_accumulator;
 	accumulator += osc2.inc;
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		accumulator -= WAVE_TABLE_SIZE;
+	}
+	accumulator += analogIn * aInOsc2;
+
+	if (accumulator >= WAVE_TABLE_SIZE) {
+		accumulator -= WAVE_TABLE_SIZE;
+	}
+	else if (accumulator < 0) {
+		accumulator += WAVE_TABLE_SIZE;
 	}
 	osc2.phase_accumulator = accumulator;
 
@@ -222,6 +289,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	accumulator += osc3.inc;
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		accumulator -= WAVE_TABLE_SIZE;
+	}
+	accumulator += analogIn * aInOsc3;
+
+	if (accumulator >= WAVE_TABLE_SIZE) {
+		accumulator -= WAVE_TABLE_SIZE;
+	}
+	else if (accumulator < 0) {
+		accumulator += WAVE_TABLE_SIZE;
 	}
 	osc3.phase_accumulator = accumulator;
 
@@ -253,10 +328,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//q = resonance/bandwidth [0 < q <= 1]  most res: q=1, less: q=0
 
 	// adding the oscillators
-	sample = (sample + sample2 + sample3) / 4.0f;
+	float filterInput = (sample * osc1.outputFilter + sample2 *osc2.outputFilter + sample3 * osc3.outputFilter) ;/// 2.0f;
 
 	low = low + cutoff * band;
-	high = reso * sample*0.5f - low - reso*band;
+	high = reso * filterInput - low - reso*band;
 	band = cutoff * high + band;
 	notch = high + low;
 	float compensation = 1.f;
@@ -266,10 +341,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	// filter blend
 	index = (uint16_t)filterIndex;
 	indexPlus = index + 1;
-	sample = ((indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus])*filterVolume * compensation;
+	float filterOutput = ((indexPlus - filterIndex) * *filterStates[index] + (filterIndex - index) * *filterStates[indexPlus])*filterVolume * compensation;
 
-	DACData = ((uint32_t) (((sample + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
+	float output1 = (filterOutput*filterOutput1 + sample * osc1.output1 + sample2 * osc2.output1 + sample3 * osc3.output1) * 0.222f;// 4.5f;
+	float output2 = (filterOutput*filterOutput2 + sample * osc1.output2 + sample2 * osc2.output2 + sample3 * osc3.output2) * 0.222f;// 4.5f;
+	DACData = ((uint32_t) (((output1 + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
+	DACData = ((uint32_t) (((output2 + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, DACData);
 
 }
@@ -294,6 +372,7 @@ int main(void)
 
   for (int i=0;i<4096;i++){
 	  dacLUT[i] = ((float)i) / 4095.0f;
+	  cutLUT[i] = (2.f * sinf (3.14159265359f *  (dacLUT[i]*11000.f + 20.f) / SR));
   }
 
   /* USER CODE END Init */
@@ -329,13 +408,13 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   float freqFactor = WAVE_TABLE_SIZE / SR;
+  float SRFactor = 1. / SR;
   while (1)
   {
-	  // read GPIO
-	  		  	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
-	  		  	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
-	  		  	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
-	  while(!adc1Completed && !adc2Completed && !adc3Completed);
+
+	  while(!adc1Completed && !adc2Completed && !adc3Completed){
+		  HAL_Delay(2);
+	  }
 	  if (adc1Completed){
 		  HAL_ADC_Stop_DMA(&hadc1);
 		  adc1Completed = 0;
@@ -352,6 +431,7 @@ int main(void)
 		  osc3.inc = freqFactor * (dacLUT[adc1Buffer[7]]*2095.f + 0.01f);
 		  osc3.tableIndex = dacLUT[adc1Buffer[8]]* 4.f;
 
+
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buffer, 9);
 	  }
 
@@ -360,7 +440,7 @@ int main(void)
 		  adc2Completed = 0;
 		  osc3.volume = dacLUT[adc2Buffer[0]];
 		 //10 13
-		  cutoff = 2.f * sinf (3.14159265359f *  (dacLUT[adc2Buffer[1]]*11000.f + 50.f) / SR);
+		  cutoff = cutLUT[adc2Buffer[1]];//(2.f * sinf (3.14159265359f *  (dacLUT[adc2Buffer[1]]*11000.f + 20.f + analogIn*aInFilter*100.f) * SRFactor));
 		  reso =  dacLUT[adc2Buffer[2]] + 0.01f;
 		  filterIndex = dacLUT[adc2Buffer[3]] * 3.f;
 		  filterVolume = dacLUT[adc2Buffer[4]];
@@ -372,14 +452,49 @@ int main(void)
 		  HAL_ADC_Stop_DMA(&hadc3);
 		  adc3Completed = 0;
 
+		  analogIn = adc3Buffer[3];
+		  eg1Attack = dacLUT[adc3Buffer[5]];
+		  eg1Inc = eg1Attack / 4.f + 0.00001f;
 
+		  eg1Decay = dacLUT[adc3Buffer[6]];
+		  eg1Dec = eg1Decay  / 4.f + 0.00001f;
+
+		  eg1Amount = dacLUT[adc3Buffer[7]];
 
 		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
 	  }
 
+	  // read GPIO
+	 	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
+	 	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
+	 	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
+
+	 	  osc1.output1 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut1PB11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  osc1.output2 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut2PB12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  osc1.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc1VolFilterPC6_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+
+	 	  osc2.output1 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut1PC7_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  osc2.output2 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut2PC8_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  osc2.outputFilter =  HAL_GPIO_ReadPin(GPIOC, Osc2VolFilterPC9_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+
+	 	  osc3.output1 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut1PC10_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  osc3.output2 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut2PC11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  osc3.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc3VolFilterPC12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+
+	 	  filterOutput1 = HAL_GPIO_ReadPin(GPIOD, FilterOut1PD0_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  filterOutput2 = HAL_GPIO_ReadPin(GPIOD, FilterOut2PD1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
 
-	  //HAL_Delay(10);
+	 	  aInOsc1 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc1FMPF1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  aInOsc2 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc2FMPF2_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  aInOsc3 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc3FMPF11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  aInFilter = HAL_GPIO_ReadPin(GPIOF, AnalogInCutPF12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+
+	 	  eg1Loop = HAL_GPIO_ReadPin(GPIOB, EG1LoopPB6_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  eg1Trigger = HAL_GPIO_ReadPin(GPIOB, EG1TriggerPB8_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
+	 	  //	  Eg1CutPE0_Pin
+
+	  HAL_Delay(2);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -1013,11 +1128,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pins : Osc1FMOsc2VolPG0_Pin Osc1FMOsc3FMPG1_Pin Osc1FMOsc3WavPG2_Pin Osc1FMOsc3VolPG3_Pin
                            Osc1FMCutPG4_Pin Osc1FMMorphPG5_Pin Osc1FMProcPG8_Pin Osc2VolOsc1FMPG9_Pin
                            Osc2VolOsc2FMPG10_Pin Osc2VolOsc3FMPG11_Pin Osc2VolCutPG12_Pin Osc3VolOsc1FMPG13_Pin
-                           Osc3VolOsc2FMPG14_Pin */
+                           Osc3VolOsc2FMPG14_Pin Osc3VolOsc3FMPG15_Pin */
   GPIO_InitStruct.Pin = Osc1FMOsc2VolPG0_Pin|Osc1FMOsc3FMPG1_Pin|Osc1FMOsc3WavPG2_Pin|Osc1FMOsc3VolPG3_Pin
                           |Osc1FMCutPG4_Pin|Osc1FMMorphPG5_Pin|Osc1FMProcPG8_Pin|Osc2VolOsc1FMPG9_Pin
                           |Osc2VolOsc2FMPG10_Pin|Osc2VolOsc3FMPG11_Pin|Osc2VolCutPG12_Pin|Osc3VolOsc1FMPG13_Pin
-                          |Osc3VolOsc2FMPG14_Pin;
+                          |Osc3VolOsc2FMPG14_Pin|Osc3VolOsc3FMPG15_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
@@ -1031,11 +1146,11 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : Eg1Osc2FMPD10_Pin Eg1Osc2WavPD11_Pin Eg1Osc2VolPD12_Pin Eg1Osc3FMPD13_Pin
                            Eg1Osc3WavPD14_Pin Eg1Osc3VolPD15_Pin FilterOut1PD0_Pin FilterOut2PD1_Pin
-                           ProcOut1PD2_Pin ProcOut2PD3_Pin ProcFilterPD4_Pin Eg1Osc1FMPD5_Pin
+                           ProcOut1PD2_Pin ProcOut2PD3_Pin Osc3VolCutPD4_Pin Eg1Osc1FMPD5_Pin
                            Eg1Osc1WavPD6_Pin Eg1Osc1VolPD7_Pin */
   GPIO_InitStruct.Pin = Eg1Osc2FMPD10_Pin|Eg1Osc2WavPD11_Pin|Eg1Osc2VolPD12_Pin|Eg1Osc3FMPD13_Pin
                           |Eg1Osc3WavPD14_Pin|Eg1Osc3VolPD15_Pin|FilterOut1PD0_Pin|FilterOut2PD1_Pin
-                          |ProcOut1PD2_Pin|ProcOut2PD3_Pin|ProcFilterPD4_Pin|Eg1Osc1FMPD5_Pin
+                          |ProcOut1PD2_Pin|ProcOut2PD3_Pin|Osc3VolCutPD4_Pin|Eg1Osc1FMPD5_Pin
                           |Eg1Osc1WavPD6_Pin|Eg1Osc1VolPD7_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
@@ -1048,11 +1163,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(USB_PowerSwitchOn_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : USB_OverCurrent_Pin Osc3VolProcPG15_Pin */
-  GPIO_InitStruct.Pin = USB_OverCurrent_Pin|Osc3VolProcPG15_Pin;
+  /*Configure GPIO pin : USB_OverCurrent_Pin */
+  GPIO_InitStruct.Pin = USB_OverCurrent_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+  HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Osc1VolFilterPC6_Pin Osc2VolOut1PC7_Pin Osc2VolOut2PC8_Pin Osc2VolFilterPC9_Pin
                            Osc3VolOut1PC10_Pin Osc3VolOut2PC11_Pin Osc3VolFilterPC12_Pin */

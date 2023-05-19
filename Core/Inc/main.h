@@ -191,8 +191,8 @@ void Error_Handler(void);
 #define ProcOut1PD2_GPIO_Port GPIOD
 #define ProcOut2PD3_Pin GPIO_PIN_3
 #define ProcOut2PD3_GPIO_Port GPIOD
-#define ProcFilterPD4_Pin GPIO_PIN_4
-#define ProcFilterPD4_GPIO_Port GPIOD
+#define Osc3VolCutPD4_Pin GPIO_PIN_4
+#define Osc3VolCutPD4_GPIO_Port GPIOD
 #define Eg1Osc1FMPD5_Pin GPIO_PIN_5
 #define Eg1Osc1FMPD5_GPIO_Port GPIOD
 #define Eg1Osc1WavPD6_Pin GPIO_PIN_6
@@ -211,8 +211,8 @@ void Error_Handler(void);
 #define Osc3VolOsc1FMPG13_GPIO_Port GPIOG
 #define Osc3VolOsc2FMPG14_Pin GPIO_PIN_14
 #define Osc3VolOsc2FMPG14_GPIO_Port GPIOG
-#define Osc3VolProcPG15_Pin GPIO_PIN_15
-#define Osc3VolProcPG15_GPIO_Port GPIOG
+#define Osc3VolOsc3FMPG15_Pin GPIO_PIN_15
+#define Osc3VolOsc3FMPG15_GPIO_Port GPIOG
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
 #define Osc3TablePB4_Pin GPIO_PIN_4
