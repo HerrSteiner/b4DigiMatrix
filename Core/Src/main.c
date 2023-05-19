@@ -88,9 +88,6 @@ volatile uint8_t adc1Completed = 0;
 volatile uint8_t adc2Completed = 0;
 volatile uint8_t adc3Completed = 0;
 
-float sample = 0.0f;
-float sample2 = 0.0f;
-float sample3 = 0.0f;
 float analogIn = 0.0f;
 float aInOsc1, aInOsc2, aInOsc3, aInFilter;
 float cutoff = 0.f;
@@ -113,7 +110,8 @@ GPIO_PinState eg1Trigger;
 float eg1Value = 0.f;
 float eg1Inc = 0.f;
 float eg1Dec = 0.f;
-float eg1Amount;
+float eg1Amount = 0.f;
+float eg1Destinations[12];
 typedef enum {
 	stop,
 	attack,
@@ -171,40 +169,48 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	// since we only use one timer, there is no need to check the timer
 
 	// calculate envelope generator 1
-	/*
+
 	if (eg1State == attack) {
-		eg1Value += eg1Inc;
-		if (eg1Value >= 1.f) {
-			eg1Value = 1.f;
-			eg1State=sustain;
+		if (eg1Loop == GPIO_PIN_SET || eg1Trigger == GPIO_PIN_RESET){
+			eg1Value += eg1Inc;
+			if (eg1Value >= 1.f) {
+				eg1Value = 1.f;
+				eg1State=sustain;
+			}
+		}
+		else {
+			eg1State = decay;
 			HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_RESET);
 		}
 	}
 	else if (eg1State == sustain){
-		if (eg1Loop == GPIO_PIN_SET || eg1Trigger == GPIO_PIN_SET){
+		if (eg1Trigger == GPIO_PIN_SET){
 			eg1State = decay;
+			HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_RESET);
 		}
 	}
 	else if (eg1State == decay){
 		eg1Value -= eg1Dec;
 		if (eg1Value <= 0.f){
 			eg1Value = 0.f;
-			eg1State=stop;
+			eg1State = stop;
+		}
+	}
+	else if (eg1State == stop){
+		if (eg1Loop == GPIO_PIN_SET || eg1Trigger == GPIO_PIN_RESET){
+			eg1State = attack;
+			HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
 		}
 	}
 
-	if (eg1Trigger == GPIO_PIN_RESET){
-		eg1State = attack;
-		HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
-	}
-	else if (eg1Loop == GPIO_PIN_SET && eg1State == stop){
-		eg1State = attack;
-		HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
-	}
-	float env1Value = eg1Value * eg1Value; // making the envelope snappy
-	env1Value *= eg1Amount;
-*/
-	float env1Value = 0.f;
+	//float env1Value = eg1Value * eg1Value; // making the envelope snappy
+	float env1Value = eg1Value * (eg1Amount*200.f);
+
+
+	float sample;
+	float sample2;
+	float sample3;
+
 	float accumulator;
 
 	// calculate oscillator 1
@@ -215,7 +221,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	}
 	// apply FM
 
-	accumulator += analogIn * aInOsc1;//osc1.crossFM * sample2;
+	accumulator += analogIn * aInOsc1 + eg1Destinations[0] * (env1Value * 200.f);//osc1.crossFM * sample2;
 
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		    accumulator -= WAVE_TABLE_SIZE;
@@ -227,8 +233,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	osc1.phase_accumulator = accumulator;
 
 	// get wavetable
-	float tableIndex = osc1.tableIndex;
+	float tableIndex = osc1.tableIndex + eg1Destinations[1]* (env1Value * 8.f);
 	uint16_t tindex = (uint16_t)tableIndex;
+	if (tindex>4)tindex = 4;
 	uint16_t tindexPlus = tindex + 1;
 
 
@@ -237,15 +244,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	uint16_t indexPlus = index + 1;
 	float sampleA,sampleB;
 
-	if (osc1.waveChange == GPIO_PIN_RESET){
-	sampleA = (indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus);
-	sampleB = (indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus);
-	}
-	else {
-		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
-		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
-	}
-	sample = (((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc1.volume) * env1Value;
+	float tableFactor1 = osc1.waveChange == GPIO_PIN_RESET ? 1.f:0.f;
+	sampleA = tableFactor1 * ((indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus));
+	sampleB = tableFactor1 * ((indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus));
+
+	float tableFactor2 = osc1.waveChange == GPIO_PIN_SET ? 1.f:0.f;
+	sampleA += tableFactor2 * ((indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus));
+	sampleB += tableFactor2 * ((indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus));
+
+	sample = (((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc1.volume);// * env1Value;
 
 	// calculate oscillator 2
 	accumulator = osc2.phase_accumulator;
@@ -273,15 +280,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	index = (uint16_t)accumulator;
 	indexPlus = index + 1;
 
+	tableFactor1 = osc2.waveChange == GPIO_PIN_RESET ? 1.f:0.f;
+	tableFactor2 = osc2.waveChange == GPIO_PIN_SET ? 1.f:0.f;
 
-	if (osc2.waveChange == GPIO_PIN_RESET){
-		sampleA = (indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus);
-		sampleB = (indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus);
-	}
-	else {
-		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
-		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
-	}
+	sampleA = tableFactor1 * ((indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus));
+	sampleB = tableFactor1 * ((indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus));
+
+
+	sampleA += tableFactor2 *((indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus));
+	sampleB += tableFactor2 * ((indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus));
+
 	sample2 = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc2.volume;
 
 	// calculate oscillator 3
@@ -310,15 +318,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	index = (uint16_t)accumulator;
 	indexPlus = index + 1;
 
+	tableFactor1 = osc3.waveChange == GPIO_PIN_RESET ? 1.f:0.f;
+	tableFactor2 = osc3.waveChange == GPIO_PIN_SET ? 1.f:0.f;
 
-	if (osc3.waveChange == GPIO_PIN_RESET){
-		sampleA = (indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus);
-		sampleB = (indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus);
-	}
-	else {
-		sampleA = (indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus);
-		sampleB = (indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus);
-	}
+	sampleA = tableFactor1 * ((indexPlus - accumulator) * *(waveset1[tindex]+index) + (accumulator-index) * *(waveset1[tindex]+indexPlus));
+	sampleB = tableFactor1 * ((indexPlus - accumulator) * *(waveset1[tindexPlus]+index) + (accumulator-index) * *(waveset1[tindexPlus]+indexPlus));
+
+
+	sampleA += tableFactor2 * ((indexPlus - accumulator) * *(waveset2[tindex]+index) + (accumulator-index) * *(waveset2[tindex]+indexPlus));
+	sampleB += tableFactor2 * ((indexPlus - accumulator) * *(waveset2[tindexPlus]+index) + (accumulator-index) * *(waveset2[tindexPlus]+indexPlus));
+
 	sample3 = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc3.volume;
 
 	// filter
@@ -347,6 +356,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	float output2 = (filterOutput*filterOutput2 + sample * osc1.output2 + sample2 * osc2.output2 + sample3 * osc3.output2) * 0.222f;// 4.5f;
 	DACData = ((uint32_t) (((output1 + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, DACData);
+
 	DACData = ((uint32_t) (((output2 + 1.0f)*0.5 * DAC_RANGE)* 0.5) );
 	HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, DACData);
 
@@ -374,7 +384,13 @@ int main(void)
 	  dacLUT[i] = ((float)i) / 4095.0f;
 	  cutLUT[i] = (2.f * sinf (3.14159265359f *  (dacLUT[i]*11000.f + 20.f) / SR));
   }
+  float eg1AmountReadings[32];
+  int eg1AmountIndex = 0;
 
+  float eg1AttackReadings[8];
+  int eg1AttackIndex = 0;
+  float eg1DecayReadings[8];
+  int eg1DecayIndex = 0;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -408,7 +424,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   float freqFactor = WAVE_TABLE_SIZE / SR;
-  float SRFactor = 1. / SR;
+  //float SRFactor = 1. / SR;
   while (1)
   {
 
@@ -453,46 +469,83 @@ int main(void)
 		  adc3Completed = 0;
 
 		  analogIn = adc3Buffer[3];
-		  eg1Attack = dacLUT[adc3Buffer[5]];
-		  eg1Inc = eg1Attack / 4.f + 0.00001f;
 
-		  eg1Decay = dacLUT[adc3Buffer[6]];
-		  eg1Dec = eg1Decay  / 4.f + 0.00001f;
+		  eg1AttackReadings[eg1AttackIndex] = dacLUT[adc3Buffer[5]];
+		  eg1AttackIndex++;
+		  if (eg1AttackIndex == 8) {
+			  float eAtt = (eg1AttackReadings[0]+eg1AttackReadings[1]+eg1AttackReadings[2]+eg1AttackReadings[3]+eg1AttackReadings[4]+eg1AttackReadings[5]+eg1AttackReadings[6]+eg1AttackReadings[7]) / 8.f;
+			  eg1Inc = eAtt * 0.125f + 0.00001f;
+			  eg1AttackIndex = 0;
+		  }
 
-		  eg1Amount = dacLUT[adc3Buffer[7]];
+		  eg1DecayReadings[eg1DecayIndex] = dacLUT[adc3Buffer[6]];
+		  eg1DecayIndex++;
+		  if (eg1DecayIndex == 8){
+			  float eDec = (eg1DecayReadings[0]+eg1DecayReadings[1]+eg1DecayReadings[2]+eg1DecayReadings[3]+eg1DecayReadings[4]+eg1DecayReadings[5]+eg1DecayReadings[6]+eg1DecayReadings[7]) / 8.f;
+			  eg1Dec = eDec * 0.125f + 0.00001f;
+			  eg1DecayIndex = 0;
+		  }
+
+
+		  eg1AmountReadings[eg1AmountIndex] = dacLUT[adc3Buffer[7]];
+		  eg1AmountIndex++;
+		  if (eg1AmountIndex == 32){
+			  eg1AmountIndex = 0;
+			  eg1Amount = (eg1AmountReadings[0] + eg1AmountReadings[1] + eg1AmountReadings[2] + eg1AmountReadings[3]
+			+ eg1AmountReadings[4] + eg1AmountReadings[5] + eg1AmountReadings[6] + eg1AmountReadings[7]
+			+ eg1AmountReadings[8] + eg1AmountReadings[9] + eg1AmountReadings[10] + eg1AmountReadings[11]
+			+ eg1AmountReadings[12] + eg1AmountReadings[13] + eg1AmountReadings[14] + eg1AmountReadings[15]
+			+ eg1AmountReadings[16] + eg1AmountReadings[17] + eg1AmountReadings[18] + eg1AmountReadings[19]
+			+ eg1AmountReadings[20] + eg1AmountReadings[21] + eg1AmountReadings[22] + eg1AmountReadings[23]
+			+ eg1AmountReadings[24] + eg1AmountReadings[25] + eg1AmountReadings[26] + eg1AmountReadings[27]
+		    + eg1AmountReadings[28] + eg1AmountReadings[29] + eg1AmountReadings[30] + eg1AmountReadings[31]
+			  ) / 32.f;
+		  }
 
 		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
 	  }
 
 	  // read GPIO
-	 	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
-	 	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
-	 	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
+	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
+	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
+	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
 
-	 	  osc1.output1 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut1PB11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  osc1.output2 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut2PB12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  osc1.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc1VolFilterPC6_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc1.output1 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut1PB11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc1.output2 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut2PB12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc1.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc1VolFilterPC6_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	 	  osc2.output1 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut1PC7_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  osc2.output2 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut2PC8_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  osc2.outputFilter =  HAL_GPIO_ReadPin(GPIOC, Osc2VolFilterPC9_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc2.output1 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut1PC7_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc2.output2 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut2PC8_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc2.outputFilter =  HAL_GPIO_ReadPin(GPIOC, Osc2VolFilterPC9_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	 	  osc3.output1 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut1PC10_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  osc3.output2 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut2PC11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  osc3.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc3VolFilterPC12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc3.output1 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut1PC10_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc3.output2 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut2PC11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc3.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc3VolFilterPC12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	 	  filterOutput1 = HAL_GPIO_ReadPin(GPIOD, FilterOut1PD0_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  filterOutput2 = HAL_GPIO_ReadPin(GPIOD, FilterOut2PD1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  filterOutput1 = HAL_GPIO_ReadPin(GPIOD, FilterOut1PD0_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  filterOutput2 = HAL_GPIO_ReadPin(GPIOD, FilterOut2PD1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
 
-	 	  aInOsc1 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc1FMPF1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  aInOsc2 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc2FMPF2_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  aInOsc3 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc3FMPF11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  aInFilter = HAL_GPIO_ReadPin(GPIOF, AnalogInCutPF12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  aInOsc1 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc1FMPF1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  aInOsc2 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc2FMPF2_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  aInOsc3 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc3FMPF11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  aInFilter = HAL_GPIO_ReadPin(GPIOF, AnalogInCutPF12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	 	  eg1Loop = HAL_GPIO_ReadPin(GPIOB, EG1LoopPB6_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  eg1Trigger = HAL_GPIO_ReadPin(GPIOB, EG1TriggerPB8_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
-	 	  //	  Eg1CutPE0_Pin
+	  eg1Loop = HAL_GPIO_ReadPin(GPIOB, EG1LoopPB6_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Trigger = HAL_GPIO_ReadPin(GPIOB, EG1TriggerPB8_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
+
+	  eg1Destinations[0] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1FMPD5_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[1] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1WavPD6_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[2] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1VolPD7_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[3] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2FMPD10_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[4] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2WavPD11_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[5] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2VolPD12_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[6] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3FMPD13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[7] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3WavPD14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[8] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3VolPD15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[9] = HAL_GPIO_ReadPin(GPIOE, Eg1CutPE0_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[10] = HAL_GPIO_ReadPin(GPIOE, Eg1FilterVolPE2_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  eg1Destinations[11] = HAL_GPIO_ReadPin(GPIOE, Eg1MorphPE1_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
 
 	  HAL_Delay(2);
     /* USER CODE END WHILE */
