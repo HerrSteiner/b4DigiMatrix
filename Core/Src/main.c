@@ -46,15 +46,14 @@ struct OscData {
   uint32_t waveform1 = maxAnalogIn;
   uint32_t waveform2;
   */
-  float crossFMint;
+  //float crossFMint;
   float crossFM;
   float volume;
   float tableIndex;
-
-  GPIO_PinState waveChange; // chooses alternative wavetable
   float output1;
   float output2;
   float outputFilter;
+  GPIO_PinState waveChange; // chooses alternative wavetable
 };
 
 typedef enum {
@@ -65,17 +64,18 @@ typedef enum {
 } egStates;
 
 struct EgData {
-	float attack;
-	float decay;
-	GPIO_PinState loop;
-	GPIO_PinState trigger;
+	//float attack;
+	//float decay;
+	float destinations[12];
 	float value;
 	float inc;
 	float dec;
 	float amount;
 	egStates state;
-	float destinations[12];
+	GPIO_PinState loop;
+	GPIO_PinState trigger;
 };
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -119,8 +119,6 @@ float filterIndex = 0.f;
 float filterVolume = 0.f;
 float *filterStates[5]={&low,&high,&band,&notch,&low};
 float filterOutput1,filterOutput2;
-float dacLUT[4096];
-float cutLUT[4096];
 
 volatile struct EgData eg1,eg2;
 
@@ -129,7 +127,11 @@ volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accu
 volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
 volatile struct OscData osc3 = {.inc = WAVE_TABLE_SIZE * 99.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
 float osc1FMDestinations[12];
+float osc2FMDestinations[4];
+float osc3FMDestinations[4];
 float osc1FMSample = 0.f;
+float osc2FMSample = 0.f;
+float osc3FMSample = 0.f;
 // wavetableset definitions, each one is made of several individual single cycle wave tables
 const float *waveset1[6]={sintable,tritable,sawtable,squaretable,randomtable,sintable};
 const float *waveset2[6]={sintable,sinsawtable,sawtable,squaretable,sinsquaretable,sintable};
@@ -263,7 +265,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	// apply FM
 
-	accumulator += analogIn * aInOsc1 + eg1.destinations[0] * (env1Value * 200.f) + eg2.destinations[0] * (env2Value * 200.f) + osc1FMDestinations[0] * osc1FMSample;
+	accumulator += analogIn * aInOsc1 + eg1.destinations[0] * (env1Value * 200.f) + eg2.destinations[0] * (env2Value * 200.f) + osc1FMDestinations[0] * osc1FMSample + osc2FMDestinations[0] * osc2FMSample + osc3FMDestinations[0] * osc3FMSample;
 
 	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
 	accumulator = (accumulator < 0.f) ? accumulator + WAVE_TABLE_SIZE : accumulator;
@@ -310,7 +312,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//if (accumulator >= WAVE_TABLE_SIZE) {
 	//	accumulator -= WAVE_TABLE_SIZE;
 	//}
-	accumulator += analogIn * aInOsc2 + eg1.destinations[3] * (env1Value * 200.f) + eg2.destinations[3] * (env2Value * 200.f) + osc1FMDestinations[3] * osc1FMSample;
+	accumulator += analogIn * aInOsc2 + eg1.destinations[3] * (env1Value * 200.f) + eg2.destinations[3] * (env2Value * 200.f) + osc1FMDestinations[3] * osc1FMSample + osc2FMDestinations[1] * osc2FMSample + osc3FMDestinations[1] * osc3FMSample;
 
 	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
 	accumulator = (accumulator < 0.f) ? accumulator + WAVE_TABLE_SIZE : accumulator;
@@ -347,6 +349,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	volumeEg = eg1.destinations[5] == 0.f ? 1.f: env1Value;
 	volumeEg2 = eg2.destinations[5] == 0.f ? 1.f: env2Value;
 	sample2 = ((((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc2.volume) * volumeEg) * volumeEg2;
+    osc2FMSample = sample2 * 500.f;
 
 	// calculate oscillator 3
 	accumulator = osc3.phase_accumulator;
@@ -355,7 +358,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	//if (accumulator >= WAVE_TABLE_SIZE) {
 	//	accumulator -= WAVE_TABLE_SIZE;
 	//}
-	accumulator += analogIn * aInOsc3 + eg1.destinations[6] * (env1Value * 200.f) + eg2.destinations[6] * (env2Value * 200.f) + osc1FMDestinations[6] * osc1FMSample;
+	accumulator += analogIn * aInOsc3 + eg1.destinations[6] * (env1Value * 200.f) + eg2.destinations[6] * (env2Value * 200.f) + osc1FMDestinations[6] * osc1FMSample + osc2FMDestinations[2] * osc2FMSample + osc3FMDestinations[2] * osc3FMSample;
 
 	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
 	accumulator = (accumulator < 0.f) ? accumulator + WAVE_TABLE_SIZE : accumulator;
@@ -392,7 +395,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	volumeEg = eg1.destinations[8] == 0.f ? 1.f: env1Value;
 	volumeEg2 = eg2.destinations[8] == 0.f ? 1.f: env2Value;
 	sample3 = ((((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc3.volume) * volumeEg) * volumeEg2;
-
+	osc3FMSample = sample3 * 500.f;
 	// filter
 	//cutoff = cutoff freq in Hz
 	//fs = sampling frequency //(e.g. 44100Hz)
@@ -448,10 +451,17 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
+  float freqFactor = WAVE_TABLE_SIZE / SR;
+  float dacLUT[4096];
+  float cutLUT[4096];
+  float oscLUT[4096];
+
   for (int i=0;i<4096;i++){
 	  dacLUT[i] = ((float)i) / 4095.0f;
 	  cutLUT[i] = (2.f * sinf (3.14159265359f *  (dacLUT[i]*11000.f + 20.f) / SR));
+	  oscLUT[i] = freqFactor * (dacLUT[i]*2095.f + 0.01f);
   }
+
   float eg1AmountReadings[32];
   int eg1AmountIndex = 0;
   float eg1AttackReadings[8];
@@ -498,28 +508,27 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  float freqFactor = WAVE_TABLE_SIZE / SR;
   //float SRFactor = 1. / SR;
   while (1)
   {
 
 	  while(!adc1Completed && !adc2Completed && !adc3Completed){
-		  HAL_Delay(10);
+		  HAL_Delay(8);
 	  }
 	  if (adc1Completed){
 		  HAL_ADC_Stop_DMA(&hadc1);
 		  adc1Completed = 0;
 
-		  osc1.inc = freqFactor * (dacLUT[adc1Buffer[0]]*2095.f + 0.01f);
+		  osc1.inc = oscLUT[adc1Buffer[0]];
 		  osc1.tableIndex = dacLUT[adc1Buffer[1]] * 4.f;
 		  osc1.volume = dacLUT[adc1Buffer[2]];
 		  osc1.crossFM = dacLUT[adc1Buffer[3]]*1000.f;
 
-		  osc2.inc = freqFactor * (dacLUT[adc1Buffer[4]]*2095.f + 0.01f);
+		  osc2.inc = oscLUT[adc1Buffer[4]];
 		  osc2.tableIndex = dacLUT[adc1Buffer[5]]* 4.f;
 		  osc2.volume = dacLUT[adc1Buffer[6]];
 
-		  osc3.inc = freqFactor * (dacLUT[adc1Buffer[7]]*2095.f + 0.01f);
+		  osc3.inc = oscLUT[adc1Buffer[7]];
 		  osc3.tableIndex = dacLUT[adc1Buffer[8]]* 4.f;
 
 
@@ -611,70 +620,77 @@ int main(void)
 
 		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
 	  }
-
 	  // read GPIO
-	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
-	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
-	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
+	  		  	  osc1.waveChange = HAL_GPIO_ReadPin(Osc1TablePA15_GPIO_Port, Osc1TablePA15_Pin);
+	  		  	  osc2.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc2TablePB2_Pin);
+	  		  	  osc3.waveChange = HAL_GPIO_ReadPin(GPIOB, Osc3TablePB4_Pin);
 
-	  osc1.output1 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut1PB11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc1.output2 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut2PB12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc1.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc1VolFilterPC6_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc1.output1 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut1PB11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc1.output2 = HAL_GPIO_ReadPin(GPIOB, Osc1VolOut2PB12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc1.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc1VolFilterPC6_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  osc2.output1 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut1PC7_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc2.output2 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut2PC8_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc2.outputFilter =  HAL_GPIO_ReadPin(GPIOC, Osc2VolFilterPC9_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc2.output1 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut1PC7_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc2.output2 = HAL_GPIO_ReadPin(GPIOC, Osc2VolOut2PC8_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc2.outputFilter =  HAL_GPIO_ReadPin(GPIOC, Osc2VolFilterPC9_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  osc3.output1 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut1PC10_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc3.output2 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut2PC11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc3.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc3VolFilterPC12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc3.output1 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut1PC10_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc3.output2 = HAL_GPIO_ReadPin(GPIOC, Osc3VolOut2PC11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc3.outputFilter = HAL_GPIO_ReadPin(GPIOC, Osc3VolFilterPC12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  filterOutput1 = HAL_GPIO_ReadPin(GPIOD, FilterOut1PD0_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  filterOutput2 = HAL_GPIO_ReadPin(GPIOD, FilterOut2PD1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  filterOutput1 = HAL_GPIO_ReadPin(GPIOD, FilterOut1PD0_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  filterOutput2 = HAL_GPIO_ReadPin(GPIOD, FilterOut2PD1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
 
 
-	  aInOsc1 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc1FMPF1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  aInOsc2 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc2FMPF2_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  aInOsc3 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc3FMPF11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  aInFilter = HAL_GPIO_ReadPin(GPIOF, AnalogInCutPF12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f; // strangly its filter vol eg 1 modulation
+	  		  	  aInOsc1 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc1FMPF1_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  aInOsc2 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc2FMPF2_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  aInOsc3 = HAL_GPIO_ReadPin(GPIOF, AnalogInOsc3FMPF11_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  aInFilter = HAL_GPIO_ReadPin(GPIOF, AnalogInCutPF12_Pin) == GPIO_PIN_RESET ? 1.0f:0.f; // strangly its filter vol eg 1 modulation
 
-	  eg1.loop = HAL_GPIO_ReadPin(GPIOB, EG1LoopPB6_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.trigger = HAL_GPIO_ReadPin(GPIOB, EG1TriggerPB8_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.loop = HAL_GPIO_ReadPin(GPIOB, EG1LoopPB6_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.trigger = HAL_GPIO_ReadPin(GPIOB, EG1TriggerPB8_Pin);// == GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  eg1.destinations[0] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1FMPD5_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[1] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1WavPD6_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[2] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1VolPD7_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[3] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2FMPD10_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[4] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2WavPD11_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[5] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2VolPD12_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[6] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3FMPD13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[7] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3WavPD14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[8] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3VolPD15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[9] = HAL_GPIO_ReadPin(GPIOE, Eg1CutPE0_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[10] = HAL_GPIO_ReadPin(GPIOE, Eg1FilterVolPE2_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg1.destinations[11] = HAL_GPIO_ReadPin(GPIOE, Eg1MorphPE1_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[0] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1FMPD5_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[1] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1WavPD6_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[2] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc1VolPD7_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[3] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2FMPD10_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[4] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2WavPD11_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[5] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc2VolPD12_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[6] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3FMPD13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[7] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3WavPD14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[8] = HAL_GPIO_ReadPin(GPIOD, Eg1Osc3VolPD15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[9] = HAL_GPIO_ReadPin(GPIOE, Eg1CutPE0_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[10] = HAL_GPIO_ReadPin(GPIOE, Eg1FilterVolPE2_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg1.destinations[11] = HAL_GPIO_ReadPin(GPIOE, Eg1MorphPE1_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  eg2.loop = HAL_GPIO_ReadPin(GPIOB, EG2LoopPB9_Pin);
-	  eg2.trigger = HAL_GPIO_ReadPin(GPIOB, EG2TriggerPB10_Pin);
+	  		  	  eg2.loop = HAL_GPIO_ReadPin(GPIOB, EG2LoopPB9_Pin);
+	  		  	  eg2.trigger = HAL_GPIO_ReadPin(GPIOB, EG2TriggerPB10_Pin);
 
-	  eg2.destinations[0] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc1FMPE4_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[1] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc1WavPE5_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[2] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc1VolPE6_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[3] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc2FMPE7_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[4] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc2WavPE8_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[5] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc2VolPE9_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[6] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc3FMPE10_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[7] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc3WavPE11_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[8] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc3VolPE12_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[9] = HAL_GPIO_ReadPin(GPIOE, Eg2CutPE13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[10] = HAL_GPIO_ReadPin(GPIOE, Eg2FilterVolPE15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  eg2.destinations[11] = HAL_GPIO_ReadPin(GPIOE, Eg2MorphPE14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[0] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc1FMPE4_Pin) == GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[1] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc1WavPE5_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[2] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc1VolPE6_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[3] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc2FMPE7_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[4] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc2WavPE8_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[5] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc2VolPE9_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[6] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc3FMPE10_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[7] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc3WavPE11_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[8] = HAL_GPIO_ReadPin(GPIOE, Eg2Osc3VolPE12_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[9] = HAL_GPIO_ReadPin(GPIOE, Eg2CutPE13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[10] = HAL_GPIO_ReadPin(GPIOE, Eg2FilterVolPE15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  eg2.destinations[11] = HAL_GPIO_ReadPin(GPIOE, Eg2MorphPE14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  osc1FMDestinations[0] = HAL_GPIO_ReadPin(GPIOB, Osc1FMOsc1FMPB13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc1FMDestinations[3] = HAL_GPIO_ReadPin(GPIOF, Osc1FMOsc2FMPF14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
-	  osc1FMDestinations[6] = HAL_GPIO_ReadPin(GPIOG, Osc1FMOsc3FMPG1_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc1FMDestinations[0] = HAL_GPIO_ReadPin(GPIOB, Osc1FMOsc1FMPB13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc1FMDestinations[3] = HAL_GPIO_ReadPin(GPIOF, Osc1FMOsc2FMPF14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc1FMDestinations[6] = HAL_GPIO_ReadPin(GPIOG, Osc1FMOsc3FMPG1_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  HAL_Delay(10);
+	  		  	  osc2FMDestinations[0] = HAL_GPIO_ReadPin(GPIOG, Osc2VolOsc1FMPG9_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc2FMDestinations[1] = HAL_GPIO_ReadPin(GPIOG, Osc2VolOsc2FMPG10_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc2FMDestinations[2] = HAL_GPIO_ReadPin(GPIOG, Osc2VolOsc3FMPG11_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+
+	  		  	  osc3FMDestinations[0] = HAL_GPIO_ReadPin(GPIOG, Osc3VolOsc1FMPG13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc3FMDestinations[1] = HAL_GPIO_ReadPin(GPIOG, Osc3VolOsc2FMPG14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  		  	  osc3FMDestinations[2] = HAL_GPIO_ReadPin(GPIOG, Osc3VolOsc3FMPG15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+
+	  HAL_Delay(4);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
