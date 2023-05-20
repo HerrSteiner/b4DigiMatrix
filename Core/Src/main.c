@@ -128,7 +128,8 @@ uint32_t DACData;
 volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
 volatile struct OscData osc2 = {.inc = WAVE_TABLE_SIZE * 101.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
 volatile struct OscData osc3 = {.inc = WAVE_TABLE_SIZE * 99.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
-
+float osc1FMDestinations[12];
+float osc1FMSample = 0.f;
 // wavetableset definitions, each one is made of several individual single cycle wave tables
 const float *waveset1[6]={sintable,tritable,sawtable,squaretable,randomtable,sintable};
 const float *waveset2[6]={sintable,sinsawtable,sawtable,squaretable,sinsquaretable,sintable};
@@ -258,19 +259,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	// calculate oscillator 1
 	accumulator = osc1.phase_accumulator;
 	accumulator += osc1.inc;
-	if (accumulator >= WAVE_TABLE_SIZE) {
-	    accumulator -= WAVE_TABLE_SIZE;
-	}
+	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
+
 	// apply FM
 
-	accumulator += analogIn * aInOsc1 + eg1.destinations[0] * (env1Value * 200.f) + eg2.destinations[0] * (env2Value * 200.f);//osc1.crossFM * sample2;
+	accumulator += analogIn * aInOsc1 + eg1.destinations[0] * (env1Value * 200.f) + eg2.destinations[0] * (env2Value * 200.f) + osc1FMDestinations[0] * osc1FMSample;
 
+	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
+	accumulator = (accumulator < 0.f) ? accumulator + WAVE_TABLE_SIZE : accumulator;
+	/*
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		    accumulator -= WAVE_TABLE_SIZE;
 	}
 	else if (accumulator < 0) {
 	    accumulator += WAVE_TABLE_SIZE;
-	}
+	}*/
 	// store accumulator
 	osc1.phase_accumulator = accumulator;
 
@@ -296,22 +299,28 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	float volumeEg = eg1.destinations[2] == 0.f ? 1.f: env1Value;
 	float volumeEg2 = eg2.destinations[2] == 0.f ? 1.f: env2Value;
-	sample = ((((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB) * osc1.volume) * volumeEg) * volumeEg2;
+	sample = ((tindexPlus - tableIndex) * sampleA + (tableIndex-tindex)*sampleB);
+	osc1FMSample = sample * osc1.crossFM;
+	sample = ((sample * osc1.volume) * volumeEg) * volumeEg2;
 
 	// calculate oscillator 2
 	accumulator = osc2.phase_accumulator;
 	accumulator += osc2.inc;
-	if (accumulator >= WAVE_TABLE_SIZE) {
-		accumulator -= WAVE_TABLE_SIZE;
-	}
-	accumulator += analogIn * aInOsc2 + eg1.destinations[3] * (env1Value * 200.f) + eg2.destinations[3] * (env2Value * 200.f);
+	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
+	//if (accumulator >= WAVE_TABLE_SIZE) {
+	//	accumulator -= WAVE_TABLE_SIZE;
+	//}
+	accumulator += analogIn * aInOsc2 + eg1.destinations[3] * (env1Value * 200.f) + eg2.destinations[3] * (env2Value * 200.f) + osc1FMDestinations[3] * osc1FMSample;
 
+	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
+	accumulator = (accumulator < 0.f) ? accumulator + WAVE_TABLE_SIZE : accumulator;
+		/*
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		accumulator -= WAVE_TABLE_SIZE;
 	}
 	else if (accumulator < 0) {
 		accumulator += WAVE_TABLE_SIZE;
-	}
+	}*/
 	osc2.phase_accumulator = accumulator;
 
 	// get wavetable
@@ -342,17 +351,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	// calculate oscillator 3
 	accumulator = osc3.phase_accumulator;
 	accumulator += osc3.inc;
-	if (accumulator >= WAVE_TABLE_SIZE) {
-		accumulator -= WAVE_TABLE_SIZE;
-	}
-	accumulator += analogIn * aInOsc3 + eg1.destinations[6] * (env1Value * 200.f) + eg2.destinations[6] * (env2Value * 200.f);
+	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
+	//if (accumulator >= WAVE_TABLE_SIZE) {
+	//	accumulator -= WAVE_TABLE_SIZE;
+	//}
+	accumulator += analogIn * aInOsc3 + eg1.destinations[6] * (env1Value * 200.f) + eg2.destinations[6] * (env2Value * 200.f) + osc1FMDestinations[6] * osc1FMSample;
 
+	accumulator = (accumulator >= WAVE_TABLE_SIZE) ? accumulator - WAVE_TABLE_SIZE: accumulator;
+	accumulator = (accumulator < 0.f) ? accumulator + WAVE_TABLE_SIZE : accumulator;
+	/*
 	if (accumulator >= WAVE_TABLE_SIZE) {
 		accumulator -= WAVE_TABLE_SIZE;
 	}
 	else if (accumulator < 0) {
 		accumulator += WAVE_TABLE_SIZE;
-	}
+	}*/
 	osc3.phase_accumulator = accumulator;
 
 	// get wavetable
@@ -491,7 +504,7 @@ int main(void)
   {
 
 	  while(!adc1Completed && !adc2Completed && !adc3Completed){
-		  HAL_Delay(2);
+		  HAL_Delay(10);
 	  }
 	  if (adc1Completed){
 		  HAL_ADC_Stop_DMA(&hadc1);
@@ -535,7 +548,7 @@ int main(void)
 		  eg1AttackReadings[eg1AttackIndex] = dacLUT[adc3Buffer[5]];
 		  eg1AttackIndex++;
 		  if (eg1AttackIndex == 8) {
-			  float eAtt = (eg1AttackReadings[0]+eg1AttackReadings[1]+eg1AttackReadings[2]+eg1AttackReadings[3]+eg1AttackReadings[4]+eg1AttackReadings[5]+eg1AttackReadings[6]+eg1AttackReadings[7]) / 8.f;
+			  float eAtt = (eg1AttackReadings[0]+eg1AttackReadings[1]+eg1AttackReadings[2]+eg1AttackReadings[3]+eg1AttackReadings[4]+eg1AttackReadings[5]+eg1AttackReadings[6]+eg1AttackReadings[7]) * 0.125f;
 			  eg1.inc = eAtt * 0.125f + 0.00001f;
 			  eg1AttackIndex = 0;
 		  }
@@ -543,7 +556,7 @@ int main(void)
 		  eg1DecayReadings[eg1DecayIndex] = dacLUT[adc3Buffer[6]];
 		  eg1DecayIndex++;
 		  if (eg1DecayIndex == 8){
-			  float eDec = (eg1DecayReadings[0]+eg1DecayReadings[1]+eg1DecayReadings[2]+eg1DecayReadings[3]+eg1DecayReadings[4]+eg1DecayReadings[5]+eg1DecayReadings[6]+eg1DecayReadings[7]) / 8.f;
+			  float eDec = (eg1DecayReadings[0]+eg1DecayReadings[1]+eg1DecayReadings[2]+eg1DecayReadings[3]+eg1DecayReadings[4]+eg1DecayReadings[5]+eg1DecayReadings[6]+eg1DecayReadings[7]) * 0.125f;
 			  eg1.dec = eDec * 0.125f + 0.00001f;
 			  eg1DecayIndex = 0;
 		  }
@@ -561,13 +574,13 @@ int main(void)
 			+ eg1AmountReadings[20] + eg1AmountReadings[21] + eg1AmountReadings[22] + eg1AmountReadings[23]
 			+ eg1AmountReadings[24] + eg1AmountReadings[25] + eg1AmountReadings[26] + eg1AmountReadings[27]
 		    + eg1AmountReadings[28] + eg1AmountReadings[29] + eg1AmountReadings[30] + eg1AmountReadings[31]
-			  ) / 32.f;
+			  ) * 0.03125f;
 		  }
 
 		  eg2AttackReadings[eg2AttackIndex] = dacLUT[adc3Buffer[0]];
 		 		  eg2AttackIndex++;
 		 		  if (eg2AttackIndex == 8) {
-		 			  float eAtt = (eg2AttackReadings[0]+eg2AttackReadings[1]+eg2AttackReadings[2]+eg2AttackReadings[3]+eg2AttackReadings[4]+eg2AttackReadings[5]+eg2AttackReadings[6]+eg2AttackReadings[7]) / 8.f;
+		 			  float eAtt = (eg2AttackReadings[0]+eg2AttackReadings[1]+eg2AttackReadings[2]+eg2AttackReadings[3]+eg2AttackReadings[4]+eg2AttackReadings[5]+eg2AttackReadings[6]+eg2AttackReadings[7]) * 0.125f;
 		 			  eg2.inc = eAtt * 0.125f + 0.00001f;
 		 			  eg2AttackIndex = 0;
 		 		  }
@@ -575,7 +588,7 @@ int main(void)
 		 		  eg2DecayReadings[eg2DecayIndex] = dacLUT[adc3Buffer[1]];
 		 		  eg2DecayIndex++;
 		 		  if (eg2DecayIndex == 8){
-		 			  float eDec = (eg2DecayReadings[0]+eg2DecayReadings[1]+eg2DecayReadings[2]+eg2DecayReadings[3]+eg2DecayReadings[4]+eg2DecayReadings[5]+eg2DecayReadings[6]+eg2DecayReadings[7]) / 8.f;
+		 			  float eDec = (eg2DecayReadings[0]+eg2DecayReadings[1]+eg2DecayReadings[2]+eg2DecayReadings[3]+eg2DecayReadings[4]+eg2DecayReadings[5]+eg2DecayReadings[6]+eg2DecayReadings[7]) * 0.125f;
 		 			  eg2.dec = eDec * 0.125f + 0.00001f;
 		 			  eg2DecayIndex = 0;
 		 		  }
@@ -593,7 +606,7 @@ int main(void)
 		 			+ eg2AmountReadings[20] + eg2AmountReadings[21] + eg2AmountReadings[22] + eg2AmountReadings[23]
 		 			+ eg2AmountReadings[24] + eg2AmountReadings[25] + eg2AmountReadings[26] + eg2AmountReadings[27]
 		 		    + eg2AmountReadings[28] + eg2AmountReadings[29] + eg2AmountReadings[30] + eg2AmountReadings[31]
-		 			  ) / 32.f;
+		 			  ) * 0.03125f;
 		 		  }
 
 		  HAL_ADC_Start_DMA(&hadc3, (uint32_t*)adc3Buffer, 8);
@@ -657,7 +670,11 @@ int main(void)
 	  eg2.destinations[10] = HAL_GPIO_ReadPin(GPIOE, Eg2FilterVolPE15_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
 	  eg2.destinations[11] = HAL_GPIO_ReadPin(GPIOE, Eg2MorphPE14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
 
-	  HAL_Delay(2);
+	  osc1FMDestinations[0] = HAL_GPIO_ReadPin(GPIOB, Osc1FMOsc1FMPB13_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc1FMDestinations[3] = HAL_GPIO_ReadPin(GPIOF, Osc1FMOsc2FMPF14_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+	  osc1FMDestinations[6] = HAL_GPIO_ReadPin(GPIOG, Osc1FMOsc3FMPG1_Pin)== GPIO_PIN_RESET ? 1.0f:0.f;
+
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
