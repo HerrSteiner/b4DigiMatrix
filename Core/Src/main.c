@@ -137,7 +137,7 @@ volatile float y3 = 0.f;
 volatile float y4 = 0.f;
 
 volatile struct EgData eg1 = {.state = stop};
-volatile struct EgData eg2 = {.state = stop};
+volatile struct EgData eg2 = {.state = stop,.loop=GPIO_PIN_SET,.inc = 0.0001f,.dec=0.00001f};
 
 uint32_t DACData;
 volatile struct OscData osc1 = {.inc = WAVE_TABLE_SIZE * 100.f / SR, .phase_accumulator = 0.f,.tableIndex = 0};
@@ -216,7 +216,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	egValue = fminf(egValue,1.f);
 	egValue = fmaxf(egValue,0.f);
 	eg2.value = egValue;
-	float env2Value = egValue * egValue * eg2.amount;
+	float env2Value = egValue * (eg2.amount * 400.f);
 
 
 	// Oscillators -----------------------------------------------------------------
@@ -365,11 +365,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	if (filterMode == GPIO_PIN_SET){
 		float antiReso = 1.f - reso;
-
+/*
 		float cutoffFM = ((osc2FMDestinations[3] == 0.f?1.0f:sample2) + (osc3FMDestinations[3] == 0.f ? 1.0f:sample3))* reso * cutoff;
 		if (cutoffFM < 0.f) {
 			cutoffFM *= -1.f;
-		}
+		}*/
 
 		low = low + (cutoff + (eg1.destinations[9]*env1Value*2.f) + (eg2.destinations[9]*env2Value*2.f)) * band;
 		high = reso * filterInput - low - reso*band;
@@ -531,7 +531,7 @@ int main(void)
 	{
 
 		while(!adc1Completed && !adc2Completed && !adc3Completed){
-			HAL_Delay(4);
+			HAL_Delay(2);
 		}
 		if (adc1Completed){
 			HAL_ADC_Stop_DMA(&hadc1);
@@ -608,7 +608,7 @@ int main(void)
 			eg2AttackIndex++;
 			if (eg2AttackIndex == 8) {
 				float eAtt = (eg2AttackReadings[0]+eg2AttackReadings[1]+eg2AttackReadings[2]+eg2AttackReadings[3]+eg2AttackReadings[4]+eg2AttackReadings[5]+eg2AttackReadings[6]+eg2AttackReadings[7]) * 0.125f;
-				eg2.inc = eAtt * 0.225f + 0.000001f;
+				eg2.inc = eAtt * 0.225f + 0.00000001f;
 				eg2AttackIndex = 0;
 			}
 
@@ -616,7 +616,7 @@ int main(void)
 			eg2DecayIndex++;
 			if (eg2DecayIndex == 8){
 				float eDec = (eg2DecayReadings[0]+eg2DecayReadings[1]+eg2DecayReadings[2]+eg2DecayReadings[3]+eg2DecayReadings[4]+eg2DecayReadings[5]+eg2DecayReadings[6]+eg2DecayReadings[7]) * 0.125f;
-				eg2.dec = (eDec * 0.225f + 0.000001f) * -1.f;
+				eg2.dec = (eDec * 0.225f + 0.00000001f) * -1.f;
 				eg2DecayIndex = 0;
 			}
 
@@ -771,7 +771,7 @@ int main(void)
 
 		switch(eg2.state){
 		case attack:
-			if (eg2.loop == GPIO_PIN_RESET || eg2.trigger == GPIO_PIN_SET){
+			if (eg2.loop == GPIO_PIN_SET || eg2.trigger == GPIO_PIN_RESET){
 
 				if (eg2.value < 1.f) {
 					eg2.factor = eg2.inc;
@@ -787,7 +787,7 @@ int main(void)
 			}
 			break;
 		case sustain:
-			if (eg2.trigger != GPIO_PIN_SET){
+			if (eg2.trigger == GPIO_PIN_SET){
 				eg2.state = decay;
 				HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_RESET);
 			}
@@ -801,14 +801,14 @@ int main(void)
 				eg2.value = 0.f;
 				eg2.factor = 0.f;
 			}
-			if (eg2.loop == GPIO_PIN_SET && eg2.trigger == GPIO_PIN_SET){ // if not looping and trigger is pressed, go into attack
+			if (eg2.loop != GPIO_PIN_SET && eg2.trigger == GPIO_PIN_RESET){ // if not looping and trigger is pressed, go into attack
 				eg2.state = attack;
 				eg2.factor = eg2.inc;
 				HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET);
 			}
 			break;
 		case stop:
-			if (eg2.loop == GPIO_PIN_RESET || eg2.trigger == GPIO_PIN_SET){
+			if (eg2.loop == GPIO_PIN_SET || eg2.trigger == GPIO_PIN_RESET){
 				eg2.state = attack;
 				eg2.factor = eg2.inc;
 				HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET);
